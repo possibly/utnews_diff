@@ -38,7 +38,11 @@ def sentence_list(text: str) -> list[str]:
     text = normalize_text(text)
     if not text:
         return []
-    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"'“‘])", text)
+    # Split on sentence boundaries: period/!/? followed by optional whitespace and a capital
+    # letter, digit, or opening quote. The \s* (instead of \s+) also handles cases where
+    # there is no space between sentences (e.g. "reads.The" in some scraped article text).
+    OPEN_QUOTES = '"\u201c\u2018'
+    parts = re.split(r"(?<=[.!?])\s*(?=[A-Z0-9" + re.escape(OPEN_QUOTES) + r"])", text)
     return [part.strip() for part in parts if part.strip()]
 
 
