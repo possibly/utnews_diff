@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>utnews_diff</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --border: #e2e2e2;
+      --muted: #888;
+      --bg: #f7f7f5;
+      --card: #fff;
+      --del-bg: #fff5f5;
+      --del-border: #f5c6c6;
+      --del-text: #b91c1c;
+      --ins-bg: #f0fdf4;
+      --ins-border: #bbf7d0;
+      --ins-text: #15803d;
+      --input-bg: #fff;
+      color-scheme: light dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --border: #2e2e2e;
+        --bg: #111;
+        --card: #1a1a1a;
+        --muted: #666;
+        --del-bg: #2d1515;
+        --del-border: #6b2222;
+        --del-text: #f87171;
+        --ins-bg: #0f2d1a;
+        --ins-border: #166534;
+        --ins-text: #86efac;
+        --input-bg: #1e1e1e;
+      }
+    }
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      margin: 0;
+      line-height: 1.5;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1.1rem 1.5rem .9rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    header h1 { font-size: 1.25rem; font-weight: 700; margin: 0 0 .15rem; letter-spacing: -.01em; }
+    header p  { margin: 0; font-size: .85rem; color: var(--muted); }
+    header .dl-link { font-size: .78rem; color: var(--muted); text-decoration: none; margin-left: .5rem; }
+    header .dl-link:hover { text-decoration: underline; }
+    main { max-width: 900px; margin: 0 auto; padding: 1.25rem 1.5rem; }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .6rem;
+      margin-bottom: 1.1rem;
+      align-items: flex-end;
+    }
+    .toolbar label { display: flex; flex-direction: column; gap: .25rem; font-size: .75rem; font-weight: 600; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+    .toolbar input, .toolbar select {
+      font: inherit;
+      font-size: .85rem;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: .38rem .6rem;
+      color: inherit;
+      min-width: 0;
+    }
+    .toolbar input[type=search] { width: 220px; }
+    .toolbar input[type=date]   { width: 148px; }
+    .toolbar select              { width: 148px; }
+    .btn-reset {
+      font: inherit;
+      font-size: .8rem;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: .38rem .8rem;
+      cursor: pointer;
+      color: var(--muted);
+      align-self: flex-end;
+    }
+    .btn-reset:hover { color: inherit; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      font-size: .78rem;
+      color: var(--muted);
+      margin-bottom: .9rem;
+      min-height: 1.2em;
+    }
+
+    /* ── Cards ── */
+    .event {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      margin-bottom: .85rem;
+      box-shadow: 0 1px 3px #0001;
+    }
+    .event-header {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      margin-bottom: .3rem;
+      flex-wrap: wrap;
+    }
+    .badge {
+      border-radius: 999px;
+      padding: .15rem .6rem;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .badge-edited  { background: #fef3c7; color: #92400e; }
+    .badge-removed { background: #fee2e2; color: #991b1b; }
+    @media (prefers-color-scheme: dark) {
+      .badge-edited  { background: #451a03; color: #fcd34d; }
+      .badge-removed { background: #450a0a; color: #fca5a5; }
+    }
+    .outlet-tag { font-size: .8rem; font-weight: 600; color: var(--muted); }
+    .event-date { font-size: .78rem; color: var(--muted); margin-left: auto; white-space: nowrap; }
+    .event-url {
+      display: block;
+      font-size: .8rem;
+      color: var(--muted);
+      word-break: break-all;
+      margin-bottom: .75rem;
+      text-decoration: none;
+    }
+    .event-url:hover { text-decoration: underline; }
+    .diffgrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .65rem;
+    }
+    @media (max-width: 560px) { .diffgrid { grid-template-columns: 1fr; } }
+    .diff-label {
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      margin: 0 0 .3rem;
+    }
+    .orig-label { color: var(--del-text); }
+    .new-label  { color: var(--ins-text); }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: inherit;
+      font-size: .86rem;
+      border-radius: 8px;
+      padding: .7rem;
+      line-height: 1.5;
+    }
+    .pre-del { background: var(--del-bg); border: 1px solid var(--del-border); color: var(--del-text); }
+    .pre-ins { background: var(--ins-bg); border: 1px solid var(--ins-border); color: var(--ins-text); }
+    .removed-label {
+      font-size: .72rem; font-weight: 700; color: var(--del-text);
+      margin: 0 0 .35rem; text-transform: uppercase; letter-spacing: .06em;
+    }
+    mark { background: #fde68a; color: inherit; border-radius: 2px; padding: 0 1px; }
+    @media (prefers-color-scheme: dark) { mark { background: #78350f; } }
+
+    /* ── Pagination ── */
+    .pagination {
+      display: flex;
+      gap: .4rem;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 1.25rem;
+      font-size: .85rem;
+    }
+    .page-btn {
+      font: inherit;
+      font-size: .82rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: .3rem .65rem;
+      cursor: pointer;
+      color: inherit;
+    }
+    .page-btn:hover  { border-color: var(--muted); }
+    .page-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+    @media (prefers-color-scheme: dark) {
+      .page-btn.active { background: #e2e8f0; color: #0f172a; border-color: #e2e8f0; }
+    }
+    .page-btn:disabled { opacity: .35; cursor: default; }
+
+    .empty-note { color: var(--muted); font-size: .9rem; margin-top: 2rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>utnews_diff</h1>
+    <p>Utah local news — edits &amp; removals detected within a two-week watch window · <a class="dl-link" href="events.jsonl" download>↓ events.jsonl</a></p>
+  </header>
+  <main>
+    <div class="toolbar">
+      <label>Search<input type="search" id="q" placeholder="keyword…" autocomplete="off"></label>
+      <label>Source<select id="outlet-filter">
+        <option value="">All sources</option>
+        
+      </select></label>
+      <label>Type<select id="type-filter">
+        <option value="">All types</option>
+        <option value="text_changed">Edited</option>
+        <option value="removed_or_taken_down">Removed</option>
+      </select></label>
+      <label>From<input type="date" id="date-from"></label>
+      <label>To<input type="date" id="date-to"></label>
+      <button class="btn-reset" id="btn-reset">Reset</button>
+    </div>
+    <div class="status-bar" id="status-bar"></div>
+    <div id="events-list"></div>
+    <div class="pagination" id="pagination"></div>
+  </main>
+
+  <script>
+  const ALL_EVENTS = [];
+  const PER_PAGE = 20;
+  let page = 1;
+
+  function esc(s) {
+    return String(s ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  function highlight(text, q) {
+    if (!q) return esc(text);
+    const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi');
+    return esc(text).replace(re.source, (_, m) => `<mark>${m}</mark>`);
+  }
+
+  function friendlyDate(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'});
+    } catch(e) { return iso; }
+  }
+
+  function renderCard(ev, q) {
+    const isRemoved = ev.event_type === 'removed_or_taken_down';
+    const badge = isRemoved
+      ? '<span class="badge badge-removed">Removed</span>'
+      : '<span class="badge badge-edited">Edited</span>';
+
+    let diff;
+    if (isRemoved) {
+      diff = `<div class="removed-block">
+        <p class="removed-label">Article removed from source</p>
+        <pre class="pre-del">${highlight(ev.original_text, q)}</pre>
+      </div>`;
+    } else {
+      diff = `<div class="diffgrid">
+        <div><p class="diff-label orig-label">Before</p><pre class="pre-del">${highlight(ev.original_text, q)}</pre></div>
+        <div><p class="diff-label new-label">After</p><pre class="pre-ins">${highlight(ev.changed_text, q)}</pre></div>
+      </div>`;
+    }
+
+    return `<article class="event">
+      <div class="event-header">
+        ${badge}
+        <span class="outlet-tag">${esc(ev.outlet)}</span>
+        <span class="event-date">${friendlyDate(ev.date)}</span>
+      </div>
+      <a class="event-url" href="${esc(ev.url)}" target="_blank" rel="noopener">${esc(ev.url)}</a>
+      ${diff}
+    </article>`;
+  }
+
+  function applyFilters() {
+    const q      = document.getElementById('q').value.trim().toLowerCase();
+    const outlet = document.getElementById('outlet-filter').value;
+    const type   = document.getElementById('type-filter').value;
+    const from   = document.getElementById('date-from').value;
+    const to     = document.getElementById('date-to').value;
+
+    return ALL_EVENTS.filter(ev => {
+      if (outlet && ev.outlet !== outlet) return false;
+      if (type   && ev.event_type !== type) return false;
+      if (from   && ev.date.slice(0,10) < from) return false;
+      if (to     && ev.date.slice(0,10) > to)   return false;
+      if (q) {
+        const hay = (ev.url + ' ' + ev.original_text + ' ' + ev.changed_text).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function render() {
+    const filtered = applyFilters();
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+    if (page > pages) page = pages;
+
+    const slice = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE);
+
+    // Status bar
+    const totalAll = ALL_EVENTS.length;
+    document.getElementById('status-bar').textContent =
+      total === totalAll
+        ? `${totalAll} event${totalAll !== 1 ? 's' : ''} recorded`
+        : `${total} of ${totalAll} event${totalAll !== 1 ? 's' : ''} match`;
+
+    // Cards
+    const list = document.getElementById('events-list');
+    if (slice.length === 0) {
+      list.innerHTML = '<p class="empty-note">No events match the current filters.</p>';
+    } else {
+      list.innerHTML = slice.map(ev => renderCard(ev, q)).join('');
+    }
+
+    // Pagination
+    const pg = document.getElementById('pagination');
+    if (pages <= 1) { pg.innerHTML = ''; return; }
+
+    let btns = '';
+    btns += `<button class="page-btn" ${page===1?'disabled':''} onclick="goPage(${page-1})">‹ Prev</button>`;
+    for (let i = 1; i <= pages; i++) {
+      if (pages > 9 && Math.abs(i - page) > 2 && i !== 1 && i !== pages) {
+        if (i === 2 || i === pages-1) btns += '<span style="color:var(--muted)">…</span>';
+        continue;
+      }
+      btns += `<button class="page-btn ${i===page?'active':''}" onclick="goPage(${i})">${i}</button>`;
+    }
+    btns += `<button class="page-btn" ${page===pages?'disabled':''} onclick="goPage(${page+1})">Next ›</button>`;
+    pg.innerHTML = btns;
+  }
+
+  function goPage(n) { page = n; render(); window.scrollTo({top:0, behavior:'smooth'}); }
+
+  function resetFilters() {
+    document.getElementById('q').value = '';
+    document.getElementById('outlet-filter').value = '';
+    document.getElementById('type-filter').value = '';
+    document.getElementById('date-from').value = '';
+    document.getElementById('date-to').value = '';
+    page = 1;
+    render();
+  }
+
+  ['q','outlet-filter','type-filter','date-from','date-to'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => { page = 1; render(); });
+  });
+  document.getElementById('btn-reset').addEventListener('click', resetFilters);
+
+  render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+tmp_rovodev_*
+private.db
+private_data/
+*.har
+site/events.jsonl
+site/events.db
+data/events.db-shm
+data/events.db-wal
