@@ -126,10 +126,32 @@ def finalized_event(event: dict[str, Any]) -> dict[str, Any]:
     return {field: event.get(field) for field in EVENT_FIELDS}
 
 
+def looks_like_headline_list(text: str) -> bool:
+    """Return True if text looks like a rotating 'Latest headlines' widget list.
+
+    Such lists consist entirely of short title-case fragments with no
+    sentence-ending punctuation — they contain no real article prose.
+    """
+    if not text:
+        return False
+    sentences = sentence_list(text)
+    if not sentences:
+        return False
+    headline_count = sum(
+        1 for s in sentences
+        if len(s) < 150 and not re.search(r'[.!?]["\'\u201d\u2019)»]?\s*$', s)
+    )
+    return headline_count == len(sentences)
+
+
 def changed_event(outlet: str, previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any] | None:
     old_sentences = sentence_list(previous.get("body_text") or "")
     new_sentences = sentence_list(current.get("body_text") or "")
     if old_sentences == new_sentences:
+        return None
+    # If the previous observation had no body text, this is a first-capture event,
+    # not a meaningful edit — skip it.
+    if not old_sentences:
         return None
 
     changes = []
@@ -137,12 +159,22 @@ def changed_event(outlet: str, previous: dict[str, Any], current: dict[str, Any]
     for tag, a0, a1, b0, b1 in matcher.get_opcodes():
         if tag == "equal":
             continue
-        changes.append(
-            {
-                "original_text": " ".join(old_sentences[a0:a1]),
-                "changed_text": " ".join(new_sentences[b0:b1]),
-            }
-        )
+        orig = " ".join(old_sentences[a0:a1])
+        chng = " ".join(new_sentences[b0:b1])
+        # Skip changes that are purely rotating widget headlines (no real prose).
+        if looks_like_headline_list(orig) or looks_like_headline_list(chng):
+            continue
+        # Skip pure insertions or pure deletions — a sentence appearing or
+        # disappearing without any corresponding replacement is almost always
+        # a dynamic sidebar/widget being added or removed, not an editorial edit.
+        # Exception: insertions at the start (b0==0, the new sentences start before
+        # any existing content) can represent genuine prepended content like
+        # "Read the criminal complaint below:".
+        if not orig and b0 > 0:
+            continue
+        if not chng and a0 > 0:
+            continue
+        changes.append({"original_text": orig, "changed_text": chng})
     if not changes:
         return None
 
