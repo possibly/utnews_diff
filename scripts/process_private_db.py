@@ -34,16 +34,46 @@ def parse_iso_datetime(value: str) -> dt.datetime | None:
     return parsed.astimezone(dt.UTC)
 
 
+def _split_paragraph_into_sentences(para: str) -> list[str]:
+    """Split a single normalized paragraph into sentences, respecting common abbreviations."""
+    # Use a placeholder to protect known abbreviations from being split on.
+    # Covers: single-letter initials (U. S., U.K.), titles (Mr., Dr., Sen., Rep., etc.)
+    ABBREV = re.compile(
+        r'\b(?:'
+        r'Mr|Mrs|Ms|Dr|Prof|Sr|Jr|Rev|Gov|Lt|Sgt|Cpl|Pvt|Pfc|Maj|Col|Gen|Adm|Capt|Supt'
+        r'|Sen|Rep|Atty|Asst|Assoc'
+        r'|Dept|Corp|Inc|Ltd|Co|Bros|vs|etc|approx|est|vol|no|pp'
+        r'|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec'
+        r'|St|Ave|Blvd|Rd|Mt|Ft'
+        r')\.(?=\s)',
+        re.IGNORECASE,
+    )
+    # Protect single-letter initials like "U. S." or "U.S." (e.g. "U. S. President")
+    INITIAL = re.compile(r'\b([A-Z])\.\s*(?=[A-Z]\.|\s*[A-Z][a-z])')
+    PLACEHOLDER = '\x00'
+    protected = ABBREV.sub(lambda m: m.group(0).replace('.', PLACEHOLDER), para)
+    protected = INITIAL.sub(lambda m: m.group(0).replace('.', PLACEHOLDER), protected)
+
+    OPEN_QUOTES = '"\u201c\u2018'
+    parts = re.split(r"(?<=[.!?])\s*(?=[A-Z0-9" + re.escape(OPEN_QUOTES) + r"])", protected)
+    return [p.strip().replace(PLACEHOLDER, '.') for p in parts if p.strip()]
+
+
 def sentence_list(text: str) -> list[str]:
-    text = normalize_text(text)
+    """Return a flat list of sentences from a multi-paragraph body_text.
+
+    Paragraph breaks are treated as hard sentence boundaries so that sentences
+    from adjacent paragraphs are never merged and diffs stay contained within
+    paragraph boundaries.
+    """
     if not text:
         return []
-    # Split on sentence boundaries: period/!/? followed by optional whitespace and a capital
-    # letter, digit, or opening quote. The \s* (instead of \s+) also handles cases where
-    # there is no space between sentences (e.g. "reads.The" in some scraped article text).
-    OPEN_QUOTES = '"\u201c\u2018'
-    parts = re.split(r"(?<=[.!?])\s*(?=[A-Z0-9" + re.escape(OPEN_QUOTES) + r"])", text)
-    return [part.strip() for part in parts if part.strip()]
+    sentences = []
+    for para in text.split('\n\n'):
+        para = normalize_text(para)
+        if para:
+            sentences.extend(_split_paragraph_into_sentences(para))
+    return sentences
 
 
 def require_private_schema(con: sqlite3.Connection) -> None:
